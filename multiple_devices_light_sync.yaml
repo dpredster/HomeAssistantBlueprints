@@ -1,0 +1,319 @@
+blueprint:
+  name: Multiple Device & Light Synchronization
+  description: >-
+    **Version 2.0.0**
+
+
+    Automatically synchronize states, brightness, colors, and transitions across multiple
+    devices and lights with intelligent state management and graceful handling of offline devices.
+
+
+    Works with any entity supporting `homeassistant.turn_on` and `homeassistant.turn_off` 
+    service calls. Requires Home Assistant 2024.1.0 or newer.
+
+
+    **Note:** You may see "Error in describing trigger" in traces - this is a cosmetic Home Assistant UI bug 
+    and does not affect functionality. The automation works correctly and traces are created successfully.
+
+
+    [Full documentation](https://github.com/dpredster/HA-Blueprints/blob/main/multiple_devices_light_sync.md)
+
+
+    ### Credits
+
+    * [@adchevrier](https://community.home-assistant.io/u/adchevrier) for the [initial blueprint](https://community.home-assistant.io/t/synchronize-the-on-off-state-of-2-entities/259010)
+    * [@hebus](https://community.home-assistant.io/u/hebus) for [this fantastic template](https://community.home-assistant.io/t/synchronize-the-on-off-state-of-2-entities/259010/38)
+    * [@dbrand666](https://github.com/dbrand666) for [various fixes](https://gist.github.com/dbrand666/b731672b2a282b9afd51a97e6e5c2b2b)
+    * [@jmaroeder](https://github.com/jmaroeder) for [Additional inspiration](https://gist.github.com/jmaroeder/c0952533a3f2c746eef83db268ddbbba)
+  domain: automation
+  homeassistant:
+    min_version: 2024.1.0
+  input:
+    linked_entities:
+      name: Entities to link
+      description: Select multiple entities to synchronize their on/off states
+      selector:
+        entity:
+          multiple: true
+    sync_brightness:
+      name: Synchronize brightness
+      description: Enable brightness synchronization for dimmable lights (lights only)
+      default: true
+      selector:
+        boolean:
+    brightness_threshold:
+      name: Brightness change threshold
+      description: Minimum brightness change required to trigger sync (reduces minor fluctuations)
+      default: 5
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 1
+          unit_of_measurement: levels
+          mode: slider
+    sync_color:
+      name: Synchronize RGB color
+      description: Enable RGB color synchronization for color-capable lights
+      default: true
+      selector:
+        boolean:
+    sync_color_temp:
+      name: Synchronize color temperature
+      description: Enable color temperature synchronization for white lights
+      default: true
+      selector:
+        boolean:
+    transition_time:
+      name: Transition time
+      description: Transition time in seconds for brightness/state changes (0 for instant)
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 0.5
+          unit_of_measurement: seconds
+          mode: slider
+    sync_delay:
+      name: Sync delay
+      description: Optional delay before syncing (useful to avoid rapid state changes)
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 5
+          step: 0.1
+          unit_of_measurement: seconds
+          mode: slider
+
+mode: restart
+max_exceeded: silent
+
+variables:
+  linked_entities: !input linked_entities
+  sync_brightness: !input sync_brightness
+  brightness_threshold: !input brightness_threshold
+  sync_color: !input sync_color
+  sync_color_temp: !input sync_color_temp
+  transition_time: !input transition_time
+  sync_delay: !input sync_delay
+
+trigger:
+  - platform: state
+    entity_id: !input linked_entities
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 0
+  - platform: homeassistant
+    event: start
+    id: ha_restart
+
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            alias: "State changed (on/off)"
+            value_template: >-
+              {{ trigger.platform == 'state' and
+                 trigger.to_state is not none and 
+                 trigger.from_state is not none and
+                 trigger.from_state.state not in ['unavailable', 'unknown'] and
+                 trigger.to_state.state != trigger.from_state.state and
+                 trigger.to_state.state in ['on', 'off'] }}
+          - condition: template
+            alias: "Not caused by this automation"
+            value_template: >
+              {{ trigger.to_state.context is defined and
+                 (trigger.to_state.context.parent_id == none or 
+                  not (this.context is defined and 
+                   trigger.to_state.context.parent_id == this.context.id)) }}
+        sequence:
+          - delay:
+              seconds: "{{ sync_delay }}"
+          - service: "homeassistant.turn_{{ trigger.to_state.state }}"
+            target:
+              entity_id: >-
+                {{ expand(linked_entities)
+                   | selectattr('entity_id', '!=', trigger.entity_id)
+                   | rejectattr('state', 'in', ['unavailable', 'unknown'])
+                   | map(attribute='entity_id')
+                   | list }}
+            data: >-
+              {% set data = {} %}
+              {% if transition_time > 0 %}
+                {% set data = dict(data, transition=transition_time) %}
+              {% endif %}
+              {{ data }}
+      - conditions:
+          - condition: template
+            alias: "Brightness changed"
+            value_template: >-
+              {{ sync_brightness and
+                 trigger.platform == 'state' and
+                 trigger.to_state is not none and 
+                 trigger.from_state is not none and
+                 trigger.from_state.state not in ['unavailable', 'unknown'] and
+                 trigger.to_state.state == 'on' and
+                 trigger.to_state.attributes.brightness is defined and
+                 trigger.from_state.attributes.brightness is defined and
+                 trigger.to_state.attributes.brightness != trigger.from_state.attributes.brightness and
+                 (trigger.to_state.attributes.brightness - trigger.from_state.attributes.brightness) | abs >= brightness_threshold }}
+          - condition: template
+            alias: "Not caused by this automation"
+            value_template: >
+              {{ trigger.to_state.context is defined and
+                 (trigger.to_state.context.parent_id == none or 
+                  not (this.context is defined and 
+                   trigger.to_state.context.parent_id == this.context.id)) }}
+        sequence:
+          - delay:
+              seconds: "{{ sync_delay }}"
+          - service: light.turn_on
+            target:
+              entity_id: >-
+                {{ expand(linked_entities)
+                   | selectattr('entity_id', '!=', trigger.entity_id)
+                   | selectattr('entity_id', 'match', '^light\.')
+                   | rejectattr('state', 'in', ['unavailable', 'unknown', 'off'])
+                   | map(attribute='entity_id')
+                   | list }}
+            data: >-
+              {% set data = {'brightness': trigger.to_state.attributes.brightness} %}
+              {% if transition_time > 0 %}
+                {% set data = dict(data, transition=transition_time) %}
+              {% endif %}
+              {{ data }}
+      - conditions:
+          - condition: template
+            alias: "RGB color changed"
+            value_template: >-
+              {{ sync_color and
+                 trigger.platform == 'state' and
+                 trigger.to_state is not none and 
+                 trigger.from_state is not none and
+                 trigger.from_state.state not in ['unavailable', 'unknown'] and
+                 trigger.to_state.state == 'on' and
+                 trigger.to_state.attributes.rgb_color is defined and
+                 trigger.from_state.attributes.rgb_color is defined and
+                 trigger.to_state.attributes.rgb_color != trigger.from_state.attributes.rgb_color }}
+          - condition: template
+            alias: "Not caused by this automation"
+            value_template: >
+              {{ trigger.to_state.context is defined and
+                 (trigger.to_state.context.parent_id == none or 
+                  not (this.context is defined and 
+                   trigger.to_state.context.parent_id == this.context.id)) }}
+        sequence:
+          - delay:
+              seconds: "{{ sync_delay }}"
+          - service: light.turn_on
+            target:
+              entity_id: >-
+                {{ expand(linked_entities)
+                   | selectattr('entity_id', '!=', trigger.entity_id)
+                   | selectattr('entity_id', 'match', '^light\.')
+                   | rejectattr('state', 'in', ['unavailable', 'unknown', 'off'])
+                   | selectattr('attributes.rgb_color', 'defined')
+                   | map(attribute='entity_id')
+                   | list }}
+            data: >-
+              {% set data = {'rgb_color': trigger.to_state.attributes.rgb_color} %}
+              {% if transition_time > 0 %}
+                {% set data = dict(data, transition=transition_time) %}
+              {% endif %}
+              {{ data }}
+      - conditions:
+          - condition: template
+            alias: "Color temperature changed"
+            value_template: >-
+              {{ sync_color_temp and
+                 trigger.platform == 'state' and
+                 trigger.to_state is not none and 
+                 trigger.from_state is not none and
+                 trigger.from_state.state not in ['unavailable', 'unknown'] and
+                 trigger.to_state.state == 'on' and
+                 trigger.to_state.attributes.color_temp is defined and
+                 trigger.from_state.attributes.color_temp is defined and
+                 trigger.to_state.attributes.color_temp != trigger.from_state.attributes.color_temp }}
+          - condition: template
+            alias: "Not caused by this automation"
+            value_template: >
+              {{ trigger.to_state.context is defined and
+                 (trigger.to_state.context.parent_id == none or 
+                  not (this.context is defined and 
+                   trigger.to_state.context.parent_id == this.context.id)) }}
+        sequence:
+          - delay:
+              seconds: "{{ sync_delay }}"
+          - service: light.turn_on
+            target:
+              entity_id: >-
+                {{ expand(linked_entities)
+                   | selectattr('entity_id', '!=', trigger.entity_id)
+                   | selectattr('entity_id', 'match', '^light\.')
+                   | rejectattr('state', 'in', ['unavailable', 'unknown', 'off'])
+                   | selectattr('attributes.color_temp', 'defined')
+                   | map(attribute='entity_id')
+                   | list }}
+            data: >-
+              {% set data = {'color_temp': trigger.to_state.attributes.color_temp} %}
+              {% if transition_time > 0 %}
+                {% set data = dict(data, transition=transition_time) %}
+              {% endif %}
+              {{ data }}
+      - conditions:
+          - condition: trigger
+            id: ha_restart
+        sequence:
+          - delay:
+              seconds: 10
+          - variables:
+              available_entities: >-
+                {{ expand(linked_entities)
+                   | rejectattr('state', 'in', ['unavailable', 'unknown'])
+                   | list }}
+              on_count: >-
+                {{ available_entities
+                   | selectattr('state', 'eq', 'on')
+                   | list | count }}
+              off_count: >-
+                {{ available_entities
+                   | selectattr('state', 'eq', 'off')
+                   | list | count }}
+              target_state: >-
+                {{ 'on' if on_count > off_count else 'off' }}
+              avg_brightness: >-
+                {% set lights_on = available_entities
+                   | selectattr('entity_id', 'match', '^light\.')
+                   | selectattr('state', 'eq', 'on')
+                   | selectattr('attributes.brightness', 'defined')
+                   | list %}
+                {% if lights_on | count > 0 %}
+                  {{ (lights_on | map(attribute='attributes.brightness') | sum / lights_on | count) | int }}
+                {% else %}
+                  255
+                {% endif %}
+          - condition: template
+            value_template: >-
+              {{ available_entities | count > 1 }}
+          - service: "homeassistant.turn_{{ target_state }}"
+            target:
+              entity_id: >-
+                {{ available_entities
+                   | selectattr('state', '!=', target_state)
+                   | map(attribute='entity_id')
+                   | list }}
+            data: >-
+              {% set data = {} %}
+              {% if target_state == 'on' and sync_brightness %}
+                {% set data = dict(data, brightness=avg_brightness) %}
+              {% endif %}
+              {% if transition_time > 0 %}
+                {% set data = dict(data, transition=transition_time) %}
+              {% endif %}
+              {{ data }}
+    default:
+      - stop: "No matching trigger condition - automation stopped"
+
