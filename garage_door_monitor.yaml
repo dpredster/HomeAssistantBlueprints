@@ -1,0 +1,299 @@
+blueprint:
+  name: Garage Door Status and Left Open Monitor
+  description: >-
+    Version: 1.0.0
+    
+    Part 1: Notifies immediately when the garage door opens or closes.
+    
+    Part 2: Notifies when a garage door (or any cover) has been open for a specified time
+    and repeats reminders at regular intervals until closed. Includes actionable
+    notifications to close the door directly from the notification.
+
+    [Full documentation](https://github.com/dpredster/HomeAssistantBlueprints/blob/main/garage_door_monitor.md)    
+    
+  domain: automation
+  source_url: https://github.com/dpredster/HomeAssistantBlueprints/blob/main/garage_door_monitor.yaml
+  input:
+    cover_entity:
+      name: Cover Entity
+      description: The garage door or cover entity to monitor
+      selector:
+        entity:
+          domain: cover
+    status_change_action:
+      name: Status Change Action
+      description: |
+        Action to perform when door opens or closes (e.g., send notification).
+        For notifications, use the predefined message or write your own custom message text.
+        See documentation for detailed configuration instructions.
+        
+        Predefined message example: "Garage door just Opened at 3:45 PM on Dec 10"
+      default: []
+      selector:
+        action:
+    left_open_action:
+      name: Left Open Action
+      description: |
+        Action to perform when door is left open (e.g., send notification with YES button).
+        For notifications, use the predefined or write your own custom message text.
+        See documentation for detailed configuration instructions.
+        
+        Predefined message examples:
+        - Initial: "Garage door was left open at 3:45 PM! Do you want to close it?"
+        - Reminder: "Reminder: Garage door has been open for 1 hours 30 minutes. Do you want to close it?"
+      default: []
+      selector:
+        action:
+    enable_status_change_notifications:
+      name: Enable Status Change Notifications
+      description: Send notifications when the door opens or closes
+      default: true
+      selector:
+        boolean:
+    enable_left_open_notifications:
+      name: Enable Left Open Notifications
+      description: Send notifications when the door has been left open
+      default: true
+      selector:
+        boolean:
+    initial_delay:
+      name: Initial Delay
+      description: How long the door must be open before the first notification
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 120
+          unit_of_measurement: minutes
+    reminder_interval:
+      name: Reminder Interval (Optional)
+      description: How often to send reminder notifications. Set to 0 to disable reminders.
+      default: 60
+      selector:
+        number:
+          min: 0
+          max: 240
+          unit_of_measurement: minutes
+
+triggers:
+  # Part 1: Status Change Notifications
+  - trigger: state
+    entity_id: !input cover_entity
+    to:
+      - open
+      - closed
+    id: status_change
+  
+  # Part 2: Left Open Notifications
+  - trigger: state
+    entity_id: !input cover_entity
+    to: open
+    for:
+      minutes: !input initial_delay
+    id: left_open
+  - trigger: homeassistant
+    event: start
+    id: restart_check
+
+conditions: []
+
+variables:
+  status_change_action: !input status_change_action
+  left_open_action: !input left_open_action
+  enable_status_change_notifications: !input enable_status_change_notifications
+  enable_left_open_notifications: !input enable_left_open_notifications
+
+actions:
+  - choose:
+      # Part 1: Immediate status change notification
+      - conditions:
+          - condition: trigger
+            id: status_change
+          - condition: template
+            value_template: "{{ enable_status_change_notifications }}"
+        sequence:
+          - variables:
+              enable_status_change_notifications: !input enable_status_change_notifications
+              status: "{{ trigger.to_state.state | replace('open', 'opened') | replace('closed', 'closed') | capitalize }}"
+              time: "{{ now().strftime('%-I:%M %p on %b %d') }}"
+              message: "Garage door just {{ trigger.to_state.state | replace('open', 'opened') | replace('closed', 'closed') | capitalize }} at {{ now().strftime('%-I:%M %p on %b %d') }}"
+          - choose:
+            - conditions: '{{ status_change_action is defined }}'
+              sequence: !input status_change_action
+      
+      # Part 2: Left open notification with reminders
+      - conditions:
+          - condition: trigger
+            id: left_open
+          - condition: template
+            value_template: "{{ enable_left_open_notifications }}"
+          - condition: state
+            entity_id: !input cover_entity
+            state: open
+            for:
+              minutes: !input initial_delay
+        sequence:
+          - alias: Set up variables for the actions
+            variables:
+              action_yes: "{{ 'YES_' ~ context.id }}"
+              cover_entity: !input cover_entity
+              reminder_interval: !input reminder_interval
+              enable_left_open_notifications: !input enable_left_open_notifications
+              message: >-
+                Garage door was left open at {{as_timestamp
+                (states[cover_entity].last_changed) |
+                timestamp_custom("%-I:%M %p")}}! Do you want to close it?
+          - alias: Send initial notification
+            choose:
+              - conditions: '{{ left_open_action is defined }}'
+                sequence: !input left_open_action
+          - alias: Wait for a response
+            wait_for_trigger:
+              - event_type: mobile_app_notification_action
+                event_data:
+                  action: "{{ action_yes }}"
+                trigger: event
+            timeout:
+              minutes: "{{ reminder_interval }}"
+          - alias: Close door if YES clicked on initial notification
+            if:
+              - condition: template
+                value_template: "{{ wait.trigger is not none and wait.trigger.event.data.action == action_yes }}"
+            then:
+              - action: cover.close
+                target:
+                  entity_id: "{{ cover_entity }}"
+          - alias: Start reminder loop
+            if:
+              - condition: template
+                value_template: "{{ reminder_interval > 0 }}"
+            then:
+              - repeat:
+                  while:
+                    - condition: state
+                      entity_id: !input cover_entity
+                      state: open
+                  sequence:
+                    - delay:
+                        minutes: "{{ reminder_interval }}"
+                    - condition: state
+                      entity_id: !input cover_entity
+                      state: open
+                    - variables:
+                        message: >
+                          Reminder: Garage door has been open for {{ ((as_timestamp(now()) -
+                          as_timestamp(states[cover_entity].last_changed))
+                          | int) // 3600 }} hours
+                          {{ (((as_timestamp(now()) -
+                          as_timestamp(states[cover_entity].last_changed))
+                          % 3600) // 60) }} minutes. Do you want to close it?
+                    - choose:
+                      - conditions: '{{ left_open_action is defined }}'
+                        sequence: !input left_open_action
+                    - alias: Wait for response to reminder
+                      wait_for_trigger:
+                        - event_type: mobile_app_notification_action
+                          event_data:
+                            action: "{{ action_yes }}"
+                          trigger: event
+                      timeout:
+                        minutes: "{{ reminder_interval }}"
+                    - alias: Close door if YES clicked
+                      if:
+                        - condition: template
+                          value_template: "{{ wait.trigger is not none and wait.trigger.event.data.action == action_yes }}"
+                      then:
+                        - action: cover.close
+                          target:
+                            entity_id: "{{ cover_entity }}"
+      
+      # Check if door is still open after restart
+      - conditions:
+          - condition: trigger
+            id: restart_check
+          - condition: template
+            value_template: "{{ enable_left_open_notifications }}"
+          - condition: state
+            entity_id: !input cover_entity
+            state: open
+            for:
+              minutes: !input initial_delay
+        sequence:
+          - alias: Set up variables after restart
+            variables:
+              action_yes: "{{ 'YES_' ~ context.id }}"
+              cover_entity: !input cover_entity
+              reminder_interval: !input reminder_interval
+              enable_left_open_notifications: !input enable_left_open_notifications
+              message: >-
+                Garage door was left open at {{as_timestamp
+                (states[cover_entity].last_changed) |
+                timestamp_custom("%-I:%M %p")}}! Do you want to close it?
+          - alias: Send notification after restart
+            choose:
+              - conditions: '{{ left_open_action is defined }}'
+                sequence: !input left_open_action
+          - alias: Wait for response after restart
+            wait_for_trigger:
+              - event_type: mobile_app_notification_action
+                event_data:
+                  action: "{{ action_yes }}"
+                trigger: event
+            timeout:
+              minutes: "{{ reminder_interval }}"
+          - alias: Close door if YES clicked after restart
+            if:
+              - condition: template
+                value_template: "{{ wait.trigger is not none and wait.trigger.event.data.action == action_yes }}"
+            then:
+              - action: cover.close
+                target:
+                  entity_id: "{{ cover_entity }}"
+          - alias: Start reminder loop after restart
+            if:
+              - condition: template
+                value_template: "{{ reminder_interval > 0 }}"
+            then:
+              - repeat:
+                  while:
+                    - condition: state
+                      entity_id: !input cover_entity
+                      state: open
+                  sequence:
+                    - delay:
+                        minutes: "{{ reminder_interval }}"
+                    - condition: state
+                      entity_id: !input cover_entity
+                      state: open
+                    - variables:
+                        message: >
+                          Reminder: Garage door has been open for {{ ((as_timestamp(now()) -
+                          as_timestamp(states[cover_entity].last_changed))
+                          | int) // 3600 }} hours
+                          {{ (((as_timestamp(now()) -
+                          as_timestamp(states[cover_entity].last_changed))
+                          % 3600) // 60) }} minutes. Do you want to close it?
+                    - choose:
+                      - conditions: '{{ left_open_action is defined }}'
+                        sequence: !input left_open_action
+                    - alias: Wait for response to restart reminder
+                      wait_for_trigger:
+                        - event_type: mobile_app_notification_action
+                          event_data:
+                            action: "{{ action_yes }}"
+                          trigger: event
+                      timeout:
+                        minutes: "{{ reminder_interval }}"
+                    - alias: Close door if YES clicked on restart reminder
+                      if:
+                        - condition: template
+                          value_template: "{{ wait.trigger is not none and wait.trigger.event.data.action == action_yes }}"
+                      then:
+                        - action: cover.close
+                          target:
+                            entity_id: "{{ cover_entity }}"
+
+mode: queued
+max: 5
+trace:
+  stored_traces: 10
