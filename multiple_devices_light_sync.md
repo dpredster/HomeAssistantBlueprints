@@ -1,6 +1,7 @@
 # Multiple Device & Light Synchronization
 
 **Version:** 2.0.0
+
 **Released:** December 7, 2025
 
 A Home Assistant blueprint for automatically synchronizing states, brightness, colors, and transitions across multiple devices and lights. Keep your devices perfectly in sync with intelligent state management and graceful handling of offline devices.
