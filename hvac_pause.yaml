@@ -2,6 +2,8 @@ blueprint:
   name: HVAC Pause
   description: >-
     Version: 1.8.0
+
+    
     Pauses HVAC when windows/doors open; resumes last state once closed. Includes temperature override protection. [Full documentation](https://github.com/dpredster/HomeAssistantBlueprints/blob/main/hvac_pause.md)
 
 

@@ -3,6 +3,7 @@ blueprint:
   description: >-
     Version: 1.0.0
     
+    
     Part 1: Notifies immediately when the garage door opens or closes.
     
     Part 2: Notifies when a garage door (or any cover) has been open for a specified time
