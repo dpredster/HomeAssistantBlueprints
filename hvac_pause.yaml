@@ -1,10 +1,15 @@
-#ver. 1.8.0
-# Added temperature override feature to resume HVAC and suspend auto-pause.
 blueprint:
-  name: HVAC Pause V1.8.0
-  description: Pauses HVAC when windows/doors open; resumes last state once closed. Includes temperature override protection. [Full documentation](https://github.com/dpredster/HA-Blueprints/blob/main/hvac_pause.md)
+  name: HVAC Pause
+  description: >-
+    Version: 1.8.0
+    Pauses HVAC when windows/doors open; resumes last state once closed. Includes temperature override protection. [Full documentation](https://github.com/dpredster/HomeAssistantBlueprints/blob/main/hvac_pause.md)
+
+
+    ### Credits
+
+    * [@raffy-ops](https://github.com/raffy-ops) — [Initial blueprint](https://gist.github.com/raffy-ops/2bdf967036d8d274fb1f62572ed5e545)
   domain: automation
-  source_url: https://github.com/dpredster/HA-Blueprints/blob/main/hvac_pause.yaml
+  source_url: https://github.com/dpredster/HomeAssistantBlueprints/blob/main/hvac_pause.yaml
   input:
     climate_device:
       description: Climate entity used for climate control.

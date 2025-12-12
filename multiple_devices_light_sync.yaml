@@ -1,7 +1,7 @@
 blueprint:
   name: Multiple Device & Light Synchronization
   description: >-
-    **Version 2.0.0**
+    Version 2.0.0
 
 
     Automatically synchronize states, brightness, colors, and transitions across multiple
@@ -16,7 +16,7 @@ blueprint:
     and does not affect functionality. The automation works correctly and traces are created successfully.
 
 
-    [Full documentation](https://github.com/dpredster/HA-Blueprints/blob/main/multiple_devices_light_sync.md)
+    [Full documentation](https://github.com/dpredster/HomeAssistantBlueprints/blob/main/multiple_devices_light_sync.md)
 
 
     ### Credits
@@ -26,6 +26,7 @@ blueprint:
     * [@dbrand666](https://github.com/dbrand666) for [various fixes](https://gist.github.com/dbrand666/b731672b2a282b9afd51a97e6e5c2b2b)
     * [@jmaroeder](https://github.com/jmaroeder) for [Additional inspiration](https://gist.github.com/jmaroeder/c0952533a3f2c746eef83db268ddbbba)
   domain: automation
+  source_url: https://github.com/dpredster/HomeAssistantBlueprints/blob/main/multiple_devices_light_sync.yaml
   homeassistant:
     min_version: 2024.1.0
   input:

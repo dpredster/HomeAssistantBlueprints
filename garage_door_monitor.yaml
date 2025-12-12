@@ -9,6 +9,7 @@ blueprint:
     and repeats reminders at regular intervals until closed. Includes actionable
     notifications to close the door directly from the notification.
 
+
     [Full documentation](https://github.com/dpredster/HomeAssistantBlueprints/blob/main/garage_door_monitor.md)    
     
   domain: automation
@@ -25,7 +26,7 @@ blueprint:
       description: |
         Action to perform when door opens or closes (e.g., send notification).
         For notifications, use the predefined message or write your own custom message text.
-        See documentation for detailed configuration instructions.
+        See [documentation](https://github.com/dpredster/HomeAssistantBlueprints/blob/main/garage_door_monitor.md) for detailed configuration instructions.
         
         Predefined message example: "Garage door just Opened at 3:45 PM on Dec 10"
       default: []
@@ -36,7 +37,7 @@ blueprint:
       description: |
         Action to perform when door is left open (e.g., send notification with YES button).
         For notifications, use the predefined or write your own custom message text.
-        See documentation for detailed configuration instructions.
+         See [documentation](https://github.com/dpredster/HomeAssistantBlueprints/blob/main/garage_door_monitor.md) for detailed configuration instructions.
         
         Predefined message examples:
         - Initial: "Garage door was left open at 3:45 PM! Do you want to close it?"
