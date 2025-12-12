@@ -1,6 +1,7 @@
 # HVAC Pause Automation
 
 **Version:** 1.8.0
+**Released:** December 7, 2025
 
 A Home Assistant blueprint that intelligently pauses your HVAC system when windows or doors are opened, and automatically resumes operation when they're closed. Now includes temperature override protection to ensure comfort is maintained even when openings are detected.
 
