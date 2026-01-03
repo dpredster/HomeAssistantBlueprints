@@ -25,7 +25,7 @@ This blueprint monitors door and window sensors and temporarily pauses your clim
 - **Auto-Resume on Temperature Events** — HVAC automatically resumes and automation suspends when temperature protection activates
 - **Configurable Duration** — Set how long temperature must be outside range before override triggers
 
-### Notifications (New in v1.9.0)
+### Notifications (New in v1.8.1)
 - **Optional Notification Messages** — Pre-formatted messages for pause, resume, and temperature override events
 - **Specific Door/Window Identification** — Notifications include which specific door or window triggered the pause
 - **Independent Notification Controls** — Enable/disable notifications for each event type separately
