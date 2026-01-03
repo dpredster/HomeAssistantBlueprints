@@ -1,7 +1,7 @@
 blueprint:
   name: HVAC Pause
   description: >-
-    Version: 1.8.0
+    Version: 1.8.1
 
     
     Pauses HVAC when windows/doors open; resumes last state once closed. Includes temperature override protection. [Full documentation](https://github.com/dpredster/HomeAssistantBlueprints/blob/main/hvac_pause.md)
@@ -114,20 +114,53 @@ blueprint:
       default: false
       selector:
         boolean: {}
+    enable_pause_notifications:
+      name: Enable Pause Notifications
+      description: Send notifications when HVAC is paused
+      default: false
+      selector:
+        boolean:
+    enable_resume_notifications:
+      name: Enable Resume Notifications
+      description: Send notifications when HVAC resumes
+      default: false
+      selector:
+        boolean:
+    enable_temp_override_notifications:
+      name: Enable Temperature Override Notifications
+      description: Send notifications when temperature override activates
+      default: false
+      selector:
+        boolean:
     pause_action:
-      description: Optional additional action to perform when climate entity is paused.
+      description: |
+        Optional additional action to perform when climate entity is paused (e.g., send notification).
+        For notifications, use the predefined message or write your own custom message text.
+        See [documentation](https://github.com/dpredster/HomeAssistantBlueprints/blob/main/hvac_pause.md) for detailed configuration instructions.
+        
+        Predefined message example: "HVAC paused at 3:45 PM on Dec 12 because Kitchen Window opened"
       name: Pause Action (Optional)
       default: []
       selector:
         action: {}
     resume_action:
-      description: Optional additional action to perform when climate entity resumes.
+      description: |
+        Optional additional action to perform when climate entity resumes (e.g., send notification).
+        For notifications, use the predefined message or write your own custom message text.
+        See [documentation](https://github.com/dpredster/HomeAssistantBlueprints/blob/main/hvac_pause.md) for detailed configuration instructions.
+        
+        Predefined message example: "HVAC resumed at 3:50 PM on Dec 12 after Kitchen Window closed"
       name: Resume Action (Optional)
       default: []
       selector:
         action: {}
     temp_override_action:
-      description: Optional additional action to perform when temperature override activates.
+      description: |
+        Optional additional action to perform when temperature override activates (e.g., send notification).
+        For notifications, use the predefined message or write your own custom message text.
+        See [documentation](https://github.com/dpredster/HomeAssistantBlueprints/blob/main/hvac_pause.md) for detailed configuration instructions.
+        
+        Predefined message example: "Temperature override activated: 18.5°C is below minimum threshold of 20°C"
       name: Temperature Override Action (Optional)
       default: []
       selector:
@@ -144,6 +177,9 @@ variables:
   resume_action: !input resume_action
   temp_override_action: !input temp_override_action
   timeout_action: !input timeout_action
+  enable_pause_notifications: !input enable_pause_notifications
+  enable_resume_notifications: !input enable_resume_notifications
+  enable_temp_override_notifications: !input enable_temp_override_notifications
   climate_device: !input climate_device
   doors_windows: !input doors_windows
   timeout: !input timeout
@@ -154,6 +190,23 @@ variables:
   temp_sensor: !input temp_sensor
   temp_min: !input temp_min
   temp_max: !input temp_max
+  is_group: '{{ state_attr(doors_windows, "entity_id") is not none }}'
+  open_entities_list: |
+    {% if state_attr(doors_windows, "entity_id") is not none %}
+      {{ expand(state_attr(doors_windows, "entity_id")) | selectattr('state', 'eq', 'on') | map(attribute='name') | list }}
+    {% else %}
+      {{ [state_attr(doors_windows, 'friendly_name')] if states(doors_windows) == 'on' else [] }}
+    {% endif %}
+  open_entities: |
+    {% if state_attr(doors_windows, "entity_id") is not none %}
+      {% set open = expand(state_attr(doors_windows, "entity_id")) | selectattr('state', 'eq', 'on') | map(attribute='name') | list %}
+      {% if open | count == 1 %}{{ open[0] }}
+      {% elif open | count == 2 %}{{ open[0] }} and {{ open[1] }}
+      {% elif open | count > 2 %}{{ open[:-1] | join(', ') }}, and {{ open[-1] }}
+      {% else %}unknown{% endif %}
+    {% else %}
+      {{ state_attr(doors_windows, 'friendly_name') if states(doors_windows) == 'on' else 'unknown' }}
+    {% endif %}
 
 mode: single
 trigger:
@@ -206,12 +259,37 @@ action:
             data: {}
             target:
               entity_id: '{{ button_entity }}'
-    - choose:
-      - conditions: '{{ resume_action is defined }}'
-        sequence: !input resume_action
-    - choose:
-      - conditions: '{{ temp_override_action is defined }}'
-        sequence: !input temp_override_action
+    - if:
+      - condition: template
+        value_template: "{{ enable_resume_notifications }}"
+      then:
+        - variables:
+            time: "{{ now().strftime('%-I:%M %p on %b %d') }}"
+            message: "HVAC resumed at {{ now().strftime('%-I:%M %p on %b %d') }} after windows/doors closed"
+        - choose:
+          - conditions: '{{ resume_action is defined }}'
+            sequence: !input resume_action
+      else:
+        - choose:
+          - conditions: '{{ resume_action is defined }}'
+            sequence: !input resume_action
+    - if:
+      - condition: template
+        value_template: "{{ enable_temp_override_notifications }}"
+      then:
+        - variables:
+            time: "{{ now().strftime('%-I:%M %p on %b %d') }}"
+            current_temp: "{{ states(temp_sensor) }}"
+            threshold: "{{ temp_min if trigger.id == 'temp_too_low' else temp_max }}"
+            reason: "{{ 'below minimum threshold' if trigger.id == 'temp_too_low' else 'above maximum threshold' }}"
+            message: "Temperature override activated: {{ current_temp }}°C is {{ reason }} of {{ threshold }}°C"
+        - choose:
+          - conditions: '{{ temp_override_action is defined }}'
+            sequence: !input temp_override_action
+      else:
+        - choose:
+          - conditions: '{{ temp_override_action is defined }}'
+            sequence: !input temp_override_action
     - stop: 'Temperature override activated - HVAC resumed'
 - condition: trigger
   id:
@@ -233,9 +311,30 @@ action:
     entity_id: !input climate_device
   data:
     hvac_mode: 'off'
-- choose:
-  - conditions: '{{ pause_action is defined and action_first != true }}'
-    sequence: !input pause_action
+- if:
+  - condition: template
+    value_template: "{{ enable_pause_notifications }}"
+  then:
+    - variables:
+        time: "{{ now().strftime('%-I:%M %p on %b %d') }}"
+        opened_items: |
+          {% if state_attr(doors_windows, "entity_id") is not none %}
+            {% set open = expand(state_attr(doors_windows, "entity_id")) | selectattr('state', 'eq', 'on') | map(attribute='name') | list %}
+            {% if open | count == 1 %}{{ open[0] }}
+            {% elif open | count == 2 %}{{ open[0] }} and {{ open[1] }}
+            {% elif open | count > 2 %}{{ open[:-1] | join(', ') }}, and {{ open[-1] }}
+            {% else %}windows/doors{% endif %}
+          {% else %}
+            {{ state_attr(doors_windows, 'friendly_name') if states(doors_windows) == 'on' else 'windows/doors' }}
+          {% endif %}
+        message: "HVAC paused at {{ now().strftime('%-I:%M %p on %b %d') }} because {{ opened_items }} opened"
+    - choose:
+      - conditions: '{{ pause_action is defined and action_first != true }}'
+        sequence: !input pause_action
+  else:
+    - choose:
+      - conditions: '{{ pause_action is defined and action_first != true }}'
+        sequence: !input pause_action
 - if:
   - condition: template
     value_template: '{{ timeout != timeout_empty }}'
@@ -271,6 +370,16 @@ action:
 - condition: state
   entity_id: !input climate_device
   state: 'off'
+- variables:
+    last_closed_sensor: |
+      {% if state_attr(doors_windows, "entity_id") is not none %}
+        {% set all_entities = state_attr(doors_windows, "entity_id") %}
+        {% set closed_entities = expand(all_entities) | selectattr('state', 'eq', 'off') | sort(attribute='last_changed', reverse=true) | list %}
+        {% if closed_entities | count > 0 %}{{ closed_entities[0].name }}
+        {% else %}unknown{% endif %}
+      {% else %}
+        {{ state_attr(doors_windows, 'friendly_name') if states(doors_windows) == 'off' else 'unknown' }}
+      {% endif %}
 - service: scene.turn_on
   target:
     entity_id: '{{ ''scene.'' ~ name_id ~ ''_snapshot'' }}'
@@ -288,6 +397,18 @@ action:
         data: {}
         target:
           entity_id: '{{ button_entity }}'
-- choose:
-  - conditions: '{{ resume_action is defined }}'
-    sequence: !input resume_action
+- if:
+  - condition: template
+    value_template: "{{ enable_resume_notifications }}"
+  then:
+    - variables:
+        time: "{{ now().strftime('%-I:%M %p on %b %d') }}"
+        closed_sensor: "{{ last_closed_sensor }}"
+        message: "HVAC resumed at {{ now().strftime('%-I:%M %p on %b %d') }} after {{ last_closed_sensor }} closed"
+    - choose:
+      - conditions: '{{ resume_action is defined }}'
+        sequence: !input resume_action
+  else:
+    - choose:
+      - conditions: '{{ resume_action is defined }}'
+        sequence: !input resume_action
