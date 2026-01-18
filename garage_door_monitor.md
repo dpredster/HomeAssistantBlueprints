@@ -1,8 +1,8 @@
 # Garage Door Status and Left Open Monitor
 
-**Version:** 1.0.0
+**Version:** 1.0.1
 
-**Released:** December 11, 2025
+**Released:** January 18, 2026
 
 A Home Assistant blueprint that provides comprehensive garage door monitoring with immediate status notifications and smart reminders when doors are left open. Includes actionable notifications to close the door directly from your phone.
 
@@ -153,6 +153,12 @@ Instead of using `{{ message }}`, you can write custom messages:
 Create multiple automations from the same blueprint to send notifications to different services (e.g., mobile app + Alexa announcements).
 
 ## Version History
+
+### Version 1.0.1
+- Fixed left open notifications not triggering due to redundant condition check
+- Fixed YES button not closing door - changed from `action: cover.close` to `service: cover.close_cover`
+- Improved reliability of door close action when tapping notification button
+- Bug fixes and improvements
 
 ### Version 1.0.0
 - Combined status change and left open monitoring in one blueprint
